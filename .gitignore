@@ -1,0 +1,13 @@
+.dockerignore
+dockerfile
+
+.env.*
+.env
+
+setup-dev.ps1
+
+docs
+
+node_modules
+
+postman
