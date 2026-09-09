@@ -87,6 +87,8 @@ exports.signup = async (req, res) => {
         year,
         password: hashedPassword,
         hasSetPassword: true,
+        isEmailVerified: false,
+        isPhoneVerified: false,
         role: 'CUSTOMER'
       }
     });

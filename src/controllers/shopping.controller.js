@@ -446,8 +446,8 @@ exports.createOrder = async (req, res) => {
         }
       }
 
-      // 3. Award Reward Points ONLY for Online Transactions (Not Cash on Delivery)
-      const isOnlinePayment = paymentMethod !== 'COD';
+      // 3. Award Reward Points ONLY for Paid Online Transactions (Not COD, Not ₹0 Orders)
+      const isOnlinePayment = paymentMethod !== 'COD' && paymentMethod !== 'Reward Points' && parseFloat(totalAmount) > 0;
       if (isOnlinePayment) {
         const pointsEarned = Math.floor(parseFloat(totalAmount) / 10);
         if (pointsEarned > 0) {
