@@ -362,15 +362,16 @@ exports.sendOtp = async (req, res) => {
       await db.otp.create({ data: { identifier, otp: otpCode, expiresAt } });
     }
 
-    if (type === 'EMAIL' || identifier.contains('@')) {
-      const { transporter } = require('../config/mail');
-      await transporter.sendMail({
-        from: process.env.MAIL_FROM,
-        to: identifier,
-        subject: 'Your UniKart Verification Code',
-        text: `Your verification code is: ${otpCode}. It expires in 10 minutes.`,
-        html: `<h3>UniKart Verification</h3><p>Your code is: <b>${otpCode}</b></p><p>Expires in 10 minutes.</p>`
-      });
+    if (type === 'EMAIL' || identifier.includes('@')) {
+      const { sendVerificationEmail } = require('../services/mail.service');
+      // Fetch user name if exists for personalized email
+      let customerName = 'Student';
+      const existingUser = await db.user.findFirst({ where: { email: identifier } });
+      if (existingUser && existingUser.fullName) {
+        customerName = existingUser.fullName;
+      }
+
+      await sendVerificationEmail(identifier, customerName, otpCode);
     } else {
       // Placeholder for Phone SMS Integration (e.g. Twilio/Msg91)
       console.log(`[SMS MOCK] Sending OTP ${otpCode} to ${identifier}`);
@@ -397,21 +398,28 @@ exports.verifyOtp = async (req, res) => {
     await db.otp.delete({ where: { id: record.id } });
 
     // Find or create user
+    const isEmail = identifier.includes('@');
     let user = await db.user.findFirst({
-      where: identifier.includes('@') ? { email: identifier } : { phoneNumber: identifier }
+      where: isEmail ? { email: identifier } : { phoneNumber: identifier }
     });
 
-    if (!user) {
+    if (user) {
+      // Mark as verified if they exist
+      await db.user.update({
+        where: { id: user.id },
+        data: isEmail ? { isEmailVerified: true } : { isPhoneVerified: true }
+      });
+    } else {
       // Minimal user creation for OTP login
       user = await db.user.create({
         data: {
           fullName: 'UniKart User',
-          email: identifier.includes('@') ? identifier : `${identifier}@unikart.temp`,
-          phoneNumber: identifier.includes('@') ? null : identifier,
+          email: isEmail ? identifier : `${identifier}@unikart.temp`,
+          phoneNumber: isEmail ? null : identifier,
           password: await bcrypt.hash(Math.random().toString(36), 10),
           role: 'CUSTOMER',
-          isPhoneVerified: !identifier.includes('@'),
-          isEmailVerified: identifier.includes('@')
+          isPhoneVerified: !isEmail,
+          isEmailVerified: isEmail
         }
       });
     }

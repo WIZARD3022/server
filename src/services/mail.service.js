@@ -25,10 +25,10 @@ const sendRegistrationEmail = (user) => sendMail({
   html: regestration_mail_content(user && user.fullName)
 });
 
-const sendVerificationEmail = (user, otp) => sendMail({
-  to: user,
+const sendVerificationEmail = (emailAddress, customerName, otp) => sendMail({
+  to: emailAddress,
   subject: 'Verify your UniKart account',
-  html: verify_mail_content(user, otp)
+  html: verify_mail_content(customerName, otp)
 });
 
 const sendOrderEmail = async (user, order, trackUrl = '#', invoiceUrl = '#') => {
