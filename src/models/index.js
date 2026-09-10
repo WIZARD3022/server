@@ -39,6 +39,50 @@ const definition = {
     status: { type: String, enum: ['PENDING', 'REPLIED'], default: 'PENDING' },
     createdAt: { type: Date, default: Date.now },
     repliedAt: Date
+  },
+  Announcement: {
+    _id: id,
+    title: { type: String, required: true },
+    message: { type: String, required: true },
+    icon: { type: String, default: 'campaign' },
+    targetCount: Number,
+    createdAt: { type: Date, default: Date.now }
+  },
+  Coupon: {
+    _id: id,
+    code: { type: String, required: true, unique: true, uppercase: true, trim: true },
+    discountType: { type: String, enum: ['FIXED', 'PERCENTAGE'], default: 'FIXED' },
+    discountValue: { type: Number, required: true, min: 0 },
+    minimumOrderAmount: { type: Number, default: 0, min: 0 },
+    maximumDiscountAmount: { type: Number, default: 0, min: 0 },
+    usageLimit: { type: Number, default: 0 },
+    usedCount: { type: Number, default: 0 },
+    perUserUsageLimit: { type: Number, default: 1 },
+    startsAt: { type: Date, default: Date.now },
+    expiresAt: Date,
+    isActive: { type: Boolean, default: true },
+    applicableType: { type: String, enum: ['ALL', 'SHOPPING_ONLY', 'PRINTING_ONLY'], default: 'ALL' },
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now }
+  },
+  CouponRedemption: {
+    _id: id,
+    couponId: { type: String, required: true, index: true },
+    code: { type: String, required: true },
+    userId: { type: String, required: true, index: true },
+    orderId: { type: String, index: true },
+    discountAmount: { type: Number, required: true },
+    createdAt: { type: Date, default: Date.now }
+  },
+  PickupPoint: {
+    _id: id,
+    name: { type: String, required: true },
+    description: String,
+    imageUrl: String,
+    isActive: { type: Boolean, default: true },
+    order: { type: Number, default: 0 },
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now }
   }
 };
 const indexes = {
@@ -51,7 +95,10 @@ const indexes = {
   Review: [[{ productId: 1, timestamp: -1 }]],
   Notification: [[{ userId: 1, timestamp: -1 }]],
   Banner: [[{ isActive: 1 }], [{ order: 1 }]],
-  PrintJob: [[{ userId: 1, createdAt: -1 }]]
+  PrintJob: [[{ userId: 1, createdAt: -1 }]],
+  Coupon: [[{ code: 1 }], [{ isActive: 1 }], [{ expiresAt: 1 }]],
+  CouponRedemption: [[{ couponId: 1 }], [{ userId: 1 }], [{ userId: 1, couponId: 1 }]],
+  PickupPoint: [[{ isActive: 1 }], [{ order: 1 }]]
 };
 
 Object.keys(definition).forEach(name => {

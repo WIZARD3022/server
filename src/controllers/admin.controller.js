@@ -223,3 +223,74 @@ exports.replySupportTicket = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+exports.broadcastAnnouncement = async (req, res) => {
+  try {
+    const { title, message, icon } = req.body;
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({ success: false, message: 'Announcement title is required' });
+    }
+
+    if (!message || !message.trim()) {
+      return res.status(400).json({ success: false, message: 'Announcement message is required' });
+    }
+
+    const cleanTitle = title.trim();
+    const cleanMessage = message.trim();
+    const notificationIcon = icon || 'campaign';
+
+    // 1. Fetch all user IDs
+    const users = await db.user.findMany({
+      select: { id: true }
+    });
+
+    if (!users || users.length === 0) {
+      return res.status(404).json({ success: false, message: 'No users found in database' });
+    }
+
+    // 2. Create notification for ALL users
+    const now = new Date();
+    const notificationRecords = users.map(u => ({
+      userId: u.id,
+      title: cleanTitle,
+      message: cleanMessage,
+      icon: notificationIcon,
+      isRead: false,
+      timestamp: now
+    }));
+
+    await db.notification.createMany({ data: notificationRecords });
+
+    // 3. Store announcement in history
+    const announcement = await db.announcement.create({
+      data: {
+        title: cleanTitle,
+        message: cleanMessage,
+        icon: notificationIcon,
+        targetCount: users.length,
+        createdAt: now
+      }
+    });
+
+    res.status(201).json({
+      success: true,
+      message: `Announcement sent to all ${users.length} users successfully!`,
+      data: announcement
+    });
+  } catch (error) {
+    console.error('Broadcast announcement error:', error);
+    res.status(500).json({ success: false, message: 'Broadcast failed: ' + error.message });
+  }
+};
+
+exports.getAnnouncements = async (req, res) => {
+  try {
+    const announcements = await db.announcement.findMany({
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json({ success: true, data: announcements });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

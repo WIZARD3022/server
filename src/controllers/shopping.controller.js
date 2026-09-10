@@ -406,7 +406,7 @@ exports.toggleWishlist = async (req, res) => {
 // --- Orders ---
 exports.createOrder = async (req, res) => {
   try {
-    const { items, totalAmount, paymentMethod, pickupPoint, type, discount, redeemPoints, pointsRedeemed } = req.body;
+    const { items, totalAmount, paymentMethod, pickupPoint, type, discount, couponCode, redeemPoints, pointsRedeemed } = req.body;
     const userId = req.user.id;
 
     const result = await db.$transaction(async (tx) => {
@@ -432,7 +432,77 @@ exports.createOrder = async (req, res) => {
         }
       }
 
-      // 2. Handle Points Redemption if selected by user
+      // 2. Validate and Atomically Redeem Coupon if provided
+      let appliedCoupon = null;
+      let calculatedCouponDiscount = 0;
+
+      if (couponCode && typeof couponCode === 'string' && couponCode.trim()) {
+        const normCode = couponCode.trim().toUpperCase();
+        const coupon = await tx.coupon.findFirst({ where: { code: normCode } });
+
+        if (!coupon) throw new Error(`Coupon code "${normCode}" does not exist.`);
+        if (!coupon.isActive) throw new Error(`Coupon "${normCode}" is currently inactive.`);
+        if (coupon.startsAt && new Date(coupon.startsAt) > new Date()) throw new Error(`Coupon "${normCode}" is not yet available.`);
+        if (coupon.expiresAt && new Date(coupon.expiresAt) < new Date()) throw new Error(`Coupon "${normCode}" has expired.`);
+
+        // Global usage limit check
+        if (coupon.usageLimit > 0 && coupon.usedCount >= coupon.usageLimit) {
+          throw new Error(`Coupon "${normCode}" has reached its maximum global usage limit.`);
+        }
+
+        // Per-user usage limit check
+        if (coupon.perUserUsageLimit > 0) {
+          const userRedemptionCount = await tx.couponRedemption.count({
+            where: { couponId: coupon.id, userId }
+          });
+
+          if (userRedemptionCount >= coupon.perUserUsageLimit) {
+            throw new Error(`You have already used coupon "${normCode}" the maximum number of times.`);
+          }
+        }
+
+        // Calculate subtotal from items
+        let shoppingSubtotal = 0;
+        let printingSubtotal = 0;
+        for (const item of items) {
+          const qty = Number(item.quantity || 1);
+          const price = Number(item.price || 0);
+          if (item.type === 'Printing') printingSubtotal += price * qty;
+          else shoppingSubtotal += price * qty;
+        }
+        const totalCartSubtotal = shoppingSubtotal + printingSubtotal;
+
+        let eligibleSubtotal = totalCartSubtotal;
+        if (coupon.applicableType === 'SHOPPING_ONLY') eligibleSubtotal = shoppingSubtotal;
+        else if (coupon.applicableType === 'PRINTING_ONLY') eligibleSubtotal = printingSubtotal;
+
+        if (coupon.minimumOrderAmount > 0 && totalCartSubtotal < coupon.minimumOrderAmount) {
+          throw new Error(`Minimum order amount for coupon "${normCode}" is ₹${coupon.minimumOrderAmount.toFixed(2)}.`);
+        }
+
+        if (coupon.discountType === 'FIXED') {
+          calculatedCouponDiscount = Number(coupon.discountValue || 0);
+        } else {
+          calculatedCouponDiscount = (eligibleSubtotal * Number(coupon.discountValue || 0)) / 100;
+        }
+
+        if (coupon.maximumDiscountAmount > 0) {
+          calculatedCouponDiscount = Math.min(calculatedCouponDiscount, coupon.maximumDiscountAmount);
+        }
+
+        calculatedCouponDiscount = Math.min(calculatedCouponDiscount, eligibleSubtotal);
+        calculatedCouponDiscount = Math.round(calculatedCouponDiscount * 100) / 100;
+
+        // Atomically increment coupon usage count
+        await tx.coupon.update({
+          where: { id: coupon.id },
+          data: { usedCount: { increment: 1 } }
+        });
+
+        appliedCoupon = coupon;
+      }
+
+      // 3. Handle Points Redemption if selected by user
       if ((redeemPoints || pointsRedeemed > 0) && parseInt(pointsRedeemed) > 0) {
         const user = await tx.user.findUnique({ where: { id: userId } });
         const actualDeduct = Math.min(user.rewardPoints || 0, parseInt(pointsRedeemed));
@@ -446,7 +516,7 @@ exports.createOrder = async (req, res) => {
         }
       }
 
-      // 3. Award Reward Points ONLY for Paid Online Transactions (Not COD, Not ₹0 Orders)
+      // 4. Award Reward Points ONLY for Paid Online Transactions (Not COD, Not ₹0 Orders)
       const isOnlinePayment = paymentMethod !== 'COD' && paymentMethod !== 'Reward Points' && parseFloat(totalAmount) > 0;
       if (isOnlinePayment) {
         const pointsEarned = Math.floor(parseFloat(totalAmount) / 10);
@@ -460,7 +530,7 @@ exports.createOrder = async (req, res) => {
         }
       }
 
-      // 4. Verify and Update Wallet if needed
+      // 5. Verify and Update Wallet if needed
       if (paymentMethod === 'Wallet') {
         const user = await tx.user.findUnique({ where: { id: userId } });
         if (user.walletBalance < totalAmount) {
@@ -487,21 +557,41 @@ exports.createOrder = async (req, res) => {
         });
       }
 
-      // 5. Create Order
+      // 6. Create Order with coupon details stored on order
       const orderNumber = `#UK-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+      const totalDiscountApplied = parseFloat(discount || 0) + (calculatedCouponDiscount || 0);
+
       const order = await tx.order.create({
         data: {
           orderNumber,
           userId,
           type,
           totalAmount: parseFloat(totalAmount),
-          discount: parseFloat(discount || 0),
+          discount: totalDiscountApplied,
           paymentMethod,
           pickupPoint,
-          config: { items },
+          config: {
+            items,
+            couponId: appliedCoupon ? appliedCoupon.id : null,
+            couponCode: appliedCoupon ? appliedCoupon.code : null,
+            couponDiscount: calculatedCouponDiscount
+          },
           status: 'ORDER_RECEIVED'
         }
       });
+
+      // 7. Record Coupon Redemption
+      if (appliedCoupon) {
+        await tx.couponRedemption.create({
+          data: {
+            couponId: appliedCoupon.id,
+            code: appliedCoupon.code,
+            userId,
+            orderId: order.id,
+            discountAmount: calculatedCouponDiscount
+          }
+        });
+      }
 
       // 3. Create Print Jobs for printing items
       for (const item of items) {
@@ -563,6 +653,138 @@ exports.getUserOrders = async (req, res) => {
       orderBy: { createdAt: 'desc' }
     });
     res.json({ success: true, data: orders });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// --- Pickup Points ---
+const DEFAULT_PICKUP_POINTS = [
+  { name: 'Main Library Gateway', description: 'Near Central Library Main Entrance, Gate 2', order: 1 },
+  { name: 'Hostel Block A Lobby', description: 'Hostel A Reception Counter', order: 2 },
+  { name: 'Hostel Block B Lobby', description: 'Hostel B Reception Counter', order: 3 },
+  { name: 'Student Center Cafeteria', description: 'Food Court Entrance Station', order: 4 },
+  { name: 'Engineering Building Plaza', description: 'Block E Ground Floor Kiosk', order: 5 },
+  { name: 'Medical College Reception', description: 'Medical Block Main Desk', order: 6 },
+];
+
+exports.getPickupPoints = async (req, res) => {
+  try {
+    let points = await db.pickupPoint.findMany({
+      where: { isActive: true },
+      orderBy: { order: 'asc' }
+    });
+
+    if (!points || points.length === 0) {
+      for (const pt of DEFAULT_PICKUP_POINTS) {
+        await db.pickupPoint.create({ data: { ...pt, isActive: true } });
+      }
+      points = await db.pickupPoint.findMany({
+        where: { isActive: true },
+        orderBy: { order: 'asc' }
+      });
+    }
+
+    res.json({ success: true, data: points });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.getAllPickupPoints = async (req, res) => {
+  try {
+    let points = await db.pickupPoint.findMany({
+      orderBy: { order: 'asc' }
+    });
+
+    if (!points || points.length === 0) {
+      for (const pt of DEFAULT_PICKUP_POINTS) {
+        await db.pickupPoint.create({ data: { ...pt, isActive: true } });
+      }
+      points = await db.pickupPoint.findMany({
+        orderBy: { order: 'asc' }
+      });
+    }
+
+    res.json({ success: true, data: points });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.createPickupPoint = async (req, res) => {
+  try {
+    const { name, description, imageUrl, isActive, order } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, message: 'Pickup point name is required' });
+    }
+
+    const point = await db.pickupPoint.create({
+      data: {
+        name: name.trim(),
+        description: (description || '').trim(),
+        imageUrl: (imageUrl || '').trim(),
+        isActive: isActive !== false,
+        order: Number(order || 0)
+      }
+    });
+
+    res.status(201).json({ success: true, message: 'Pickup point created', data: point });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.updatePickupPoint = async (req, res) => {
+  try {
+    const { name, description, imageUrl, isActive, order } = req.body;
+    const { id } = req.params;
+
+    const existing = await db.pickupPoint.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ success: false, message: 'Pickup point not found' });
+
+    const updated = await db.pickupPoint.update({
+      where: { id },
+      data: {
+        name: name ? name.trim() : existing.name,
+        description: description !== undefined ? description.trim() : existing.description,
+        imageUrl: imageUrl !== undefined ? imageUrl.trim() : existing.imageUrl,
+        isActive: isActive !== undefined ? Boolean(isActive) : existing.isActive,
+        order: order !== undefined ? Number(order) : existing.order
+      }
+    });
+
+    res.json({ success: true, message: 'Pickup point updated', data: updated });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.togglePickupPointStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const existing = await db.pickupPoint.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ success: false, message: 'Pickup point not found' });
+
+    const updated = await db.pickupPoint.update({
+      where: { id },
+      data: { isActive: !existing.isActive }
+    });
+
+    res.json({ success: true, message: `Pickup point is now ${updated.isActive ? 'Active' : 'Inactive'}`, data: updated });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.deletePickupPoint = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const existing = await db.pickupPoint.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ success: false, message: 'Pickup point not found' });
+
+    await db.pickupPoint.delete({ where: { id } });
+    res.json({ success: true, message: 'Pickup point deleted successfully' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

@@ -81,6 +81,14 @@ const wrap = name => {
       if (payload.id !== undefined && payload._id === undefined) { payload._id = payload.id; delete payload.id; }
       return clean(await new Model(payload).save());
     },
+    createMany: async ({ data }) => {
+      const items = (data || []).map(item => {
+        const payload = { ...item };
+        if (payload.id !== undefined && payload._id === undefined) { payload._id = payload.id; delete payload.id; }
+        return payload;
+      });
+      return Model.insertMany(items);
+    },
     update: async ({ where, data }) => {
       const update = {};
       Object.keys(data || {}).forEach(k => {

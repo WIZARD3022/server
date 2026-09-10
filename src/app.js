@@ -61,6 +61,7 @@ app.use('/api/v1/printer', require('./routes/printer.routes'));
 app.use('/api/v1/printers', require('./routes/printer.routes'));
 app.use('/api/v1/printing', require('./routes/printing.routes'));
 app.use('/api/v1/shopping', require('./routes/shopping.routes'));
+app.use('/api/v1/coupons', require('./routes/coupon.routes'));
 app.use('/api/v1/notification', require('./routes/notification.routes'));
 app.use('/api/v1/notifications', require('./routes/notification.routes'));
 

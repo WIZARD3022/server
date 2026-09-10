@@ -10,6 +10,7 @@ router.get('/products', shoppingController.getProducts);
 router.get('/products/:id', shoppingController.getProductById);
 router.get('/products/:id/reviews', shoppingController.getReviews);
 router.get('/banners', shoppingController.getBanners);
+router.get('/pickup-points', shoppingController.getPickupPoints);
 
 // Wishlist (Authenticated)
 router.get('/wishlist/ids', authMiddleware, shoppingController.getWishlistIds);
