@@ -13,8 +13,17 @@ const storageFor = folder => multer.diskStorage({
     cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
-    const extension = path.extname(file.originalname).toLowerCase();
-    const basename = path.basename(file.originalname, extension)
+    let extension = path.extname(file.originalname).toLowerCase();
+    if (!extension || extension === '.bin' || extension === '.blob') {
+      if (file.mimetype === 'image/png') extension = '.png';
+      else if (file.mimetype === 'image/jpeg' || file.mimetype === 'image/jpg') extension = '.jpg';
+      else if (file.mimetype === 'image/webp') extension = '.webp';
+      else if (file.mimetype === 'application/pdf') extension = '.pdf';
+      else extension = '.jpg';
+    }
+
+    const rawBasename = path.basename(file.originalname, path.extname(file.originalname));
+    const basename = rawBasename
       .replace(/[^a-z0-9_-]/gi, '-')
       .replace(/-+/g, '-')
       .slice(0, 80) || 'file';
@@ -23,10 +32,10 @@ const storageFor = folder => multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = new Set(['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png']);
+  const allowedTypes = new Set(['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.webp', '.bin', '.blob']);
   const extension = path.extname(file.originalname).toLowerCase();
 
-  if (allowedTypes.has(extension)) {
+  if (allowedTypes.has(extension) || file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
     cb(null, true);
     return;
   }

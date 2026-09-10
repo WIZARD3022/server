@@ -28,6 +28,17 @@ const definition = {
     options: { type: mongoose.Schema.Types.Mixed, default: {} },
     status: { type: String, enum: ['pending', 'submitted', 'processing', 'completed', 'cancelled', 'failed', 'unknown'], default: 'pending', index: true },
     error: String
+  },
+  SupportTicket: {
+    _id: id,
+    userId: { type: String, required: true, index: true },
+    fullName: String,
+    email: String,
+    message: { type: String, required: true },
+    adminReply: String,
+    status: { type: String, enum: ['PENDING', 'REPLIED'], default: 'PENDING' },
+    createdAt: { type: Date, default: Date.now },
+    repliedAt: Date
   }
 };
 const indexes = {

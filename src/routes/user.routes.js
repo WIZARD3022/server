@@ -17,4 +17,8 @@ router.put('/addresses/:id', authMiddleware, userController.updateAddress);
 router.put('/addresses/:id/default', authMiddleware, userController.setDefaultAddress);
 router.delete('/addresses/:id', authMiddleware, userController.deleteAddress);
 
+// Support
+router.post('/support-ticket', authMiddleware, userController.createSupportTicket);
+router.get('/support-tickets', authMiddleware, userController.getUserSupportTickets);
+
 module.exports = router;

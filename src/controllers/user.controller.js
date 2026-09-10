@@ -306,3 +306,46 @@ exports.deleteAddress = async (req, res) => {
   }
 };
 
+exports.createSupportTicket = async (req, res) => {
+  try {
+    const { message } = req.body;
+    if (!message || !message.trim()) {
+      return res.status(400).json({ success: false, message: 'Message / Comment is required' });
+    }
+
+    const user = await db.user.findUnique({ where: { id: req.user.id } });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    const ticket = await db.supportTicket.create({
+      data: {
+        userId: user.id,
+        fullName: user.fullName || 'Student',
+        email: user.email,
+        message: message.trim(),
+        status: 'PENDING'
+      }
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Your inquiry has been submitted! Our support team will respond shortly.',
+      data: ticket
+    });
+  } catch (error) {
+    console.error('Create support ticket error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.getUserSupportTickets = async (req, res) => {
+  try {
+    const tickets = await db.supportTicket.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json({ success: true, data: tickets });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+

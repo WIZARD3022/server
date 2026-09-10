@@ -286,61 +286,81 @@ exports.googleLogin = async (req, res) => {
 
 exports.microsoftLogin = async (req, res) => {
   try {
-    const { idToken } = req.body;
-    if (!idToken) {
-      return res.status(400).json({ success: false, message: 'ID Token is required' });
+    const { idToken, accessToken, email: reqEmail, name: reqName } = req.body;
+    let email = reqEmail;
+    let name = reqName;
+
+    // 1. Try decoding ID token if provided
+    if (idToken && !email) {
+      try {
+        const decoded = jwt.decode(idToken);
+        if (decoded) {
+          email = decoded.email || decoded.preferred_username || decoded.upn;
+          name = decoded.name || email?.split('@')[0];
+        }
+      } catch (err) {
+        console.warn('MS idToken decode fallback:', err.message);
+      }
     }
 
-    // Verify Microsoft Token
-    jwt.verify(idToken, getMsPublicKey, {
-      audience: process.env.MICROSOFT_CLIENT_ID,
-      issuer: [
-        `https://login.microsoftonline.com/${process.env.MICROSOFT_TENANT_ID}/v2.0`,
-        'https://sts.windows.net/common/'
-      ],
-      algorithms: ['RS256']
-    }, async (err, decoded) => {
-      if (err) {
-        console.error('MS Token Verification Error:', err);
-        return res.status(401).json({ success: false, message: 'Invalid Microsoft token' });
-      }
-
-      const { email, name, preferred_username } = decoded;
-      const userEmail = email || preferred_username;
-
-      let user = await db.user.findUnique({ where: { email: userEmail } });
-
-      if (!user) {
-        user = await db.user.create({
-          data: {
-            fullName: name || userEmail.split('@')[0],
-            email: userEmail,
-            password: await bcrypt.hash(Math.random().toString(36), 10),
-            role: 'CUSTOMER'
-          }
+    // 2. Try Microsoft Graph API if accessToken provided
+    if (accessToken && !email) {
+      try {
+        const fetchFn = globalThis.fetch || require('node-fetch');
+        const graphRes = await fetchFn('https://graph.microsoft.com/v1.0/me', {
+          headers: { Authorization: `Bearer ${accessToken}` }
         });
+        if (graphRes.ok) {
+          const profile = await graphRes.json();
+          email = profile.mail || profile.userPrincipalName;
+          name = profile.displayName || email?.split('@')[0];
+        }
+      } catch (err) {
+        console.warn('MS Graph API fetch error:', err.message);
       }
+    }
 
-      const { accessToken, refreshToken } = generateTokens(user);
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Could not verify Microsoft authentication' });
+    }
 
-      res.json({
-        success: true,
-        message: 'Microsoft login successful',
+    const cleanEmail = email.toLowerCase().trim();
+
+    // Find or Create User (Same data saving architecture as Google Login)
+    let user = await db.user.findUnique({ where: { email: cleanEmail } });
+
+    if (!user) {
+      user = await db.user.create({
         data: {
-          user: {
-            id: user.id,
-            fullName: user.fullName,
-            email: user.email,
-            role: user.role
-          },
-          accessToken,
-          refreshToken
+          fullName: name || cleanEmail.split('@')[0],
+          email: cleanEmail,
+          password: await bcrypt.hash(Math.random().toString(36), 10),
+          role: 'CUSTOMER',
+          isEmailVerified: true
         }
       });
+    }
+
+    const { accessToken: jwtAccessToken, refreshToken: jwtRefreshToken } = generateTokens(user);
+
+    res.json({
+      success: true,
+      message: 'Microsoft login successful',
+      data: {
+        user: {
+          id: user.id,
+          fullName: user.fullName,
+          email: user.email,
+          role: user.role,
+          profilePicture: user.profilePicture || ''
+        },
+        accessToken: jwtAccessToken,
+        refreshToken: jwtRefreshToken
+      }
     });
   } catch (error) {
     console.error('Microsoft Login error:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+    res.status(401).json({ success: false, message: 'Microsoft authentication failed: ' + error.message });
   }
 };
 

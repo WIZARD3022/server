@@ -15,5 +15,7 @@ router.get('/orders', adminController.getAllOrders);
 router.put('/orders/:id/status', adminController.updateOrderStatus);
 router.get('/stats', adminController.getStats);
 router.post('/decode-qr', memoryUpload.single('file'), adminController.decodeQr);
+router.get('/support-tickets', adminController.getSupportTickets);
+router.post('/support-tickets/:ticketId/reply', adminController.replySupportTicket);
 
 module.exports = router;

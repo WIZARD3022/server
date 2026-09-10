@@ -169,3 +169,57 @@ exports.decodeQr = async (req, res) => {
     res.status(500).json({ success: false, message: 'QR decoding failed: ' + error.message });
   }
 };
+
+exports.getSupportTickets = async (req, res) => {
+  try {
+    const tickets = await db.supportTicket.findMany({
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json({ success: true, data: tickets });
+  } catch (error) {
+    console.error('Get admin support tickets error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.replySupportTicket = async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+    const { replyMessage } = req.body;
+
+    if (!replyMessage || !replyMessage.trim()) {
+      return res.status(400).json({ success: false, message: 'Reply message is required' });
+    }
+
+    const ticket = await db.supportTicket.findUnique({ where: { id: ticketId } });
+    if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found' });
+
+    const updated = await db.supportTicket.update({
+      where: { id: ticketId },
+      data: {
+        adminReply: replyMessage.trim(),
+        status: 'REPLIED',
+        repliedAt: new Date()
+      }
+    });
+
+    // Notify the user via in-app Notification
+    await db.notification.create({
+      data: {
+        userId: ticket.userId,
+        title: 'Support Reply from UniKart Team',
+        message: replyMessage.trim(),
+        icon: 'support'
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Reply sent and user notified!',
+      data: updated
+    });
+  } catch (error) {
+    console.error('Reply support ticket error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
