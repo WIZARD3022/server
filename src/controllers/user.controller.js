@@ -29,7 +29,9 @@ exports.getProfile = async (req, res) => {
           walletBalance: true,
           rewardPoints: true,
           premiumMember: true,
-          hasSetPassword: true
+          hasSetPassword: true,
+          isEmailVerified: true,
+          isPhoneVerified: true
         }
       }),
       db.order.count({ where: { userId: req.user.id } })
