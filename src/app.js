@@ -8,7 +8,7 @@ const { uploadRoot } = require('./middleware/upload.middleware');
 
 const app = express();
 
-app.set("trust proxy", true);
+app.set("trust proxy", 1);
 
 // Middleware
 app.use(helmet({
@@ -20,7 +20,7 @@ app.use(compression()); // Compress all responses
 app.use(cors({
   origin: true, // Dynamically mirror request origin for credentials support
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With']
 }));
 app.use(morgan('dev'));
@@ -43,10 +43,6 @@ const path = require('path');
 // Static files for uploads
 app.use('/uploads', express.static(uploadRoot));
 
-// Serve Flutter Web Build (Optional, but good for testing)
-const webPath = path.join(__dirname, '../../build/web');
-app.use(express.static(webPath));
-
 // Feature Routes
 app.use('/api/v1/auth', require('./routes/auth.routes'));
 app.use('/api/v1/user', require('./routes/user.routes'));
@@ -65,20 +61,6 @@ app.use('/api/v1/coupons', require('./routes/coupon.routes'));
 app.use('/api/v1/notification', require('./routes/notification.routes'));
 app.use('/api/v1/notifications', require('./routes/notification.routes'));
 
-// Handle non-existent API routes to avoid 405 on POST/PUT/DELETE
-app.all('/api/*', (req, res) => {
-  res.status(404).json({
-    success: false,
-    message: `API endpoint ${req.method} ${req.originalUrl} not found`
-  });
-});
-
-// Handle Flutter Web Routing (Catch-all)
-app.get('*', (req, res) => {
-  if (!req.path.startsWith('/api/')) {
-    res.sendFile(path.join(webPath, 'index.html'));
-  }
-});
 
 // Error Handling Middleware
 app.use((err, req, res, next) => {

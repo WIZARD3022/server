@@ -516,18 +516,17 @@ exports.createOrder = async (req, res) => {
         }
       }
 
-      // 4. Award Reward Points ONLY for Paid Online Transactions (Not COD, Not ₹0 Orders)
-      const isOnlinePayment = paymentMethod !== 'COD' && paymentMethod !== 'Reward Points' && parseFloat(totalAmount) > 0;
-      if (isOnlinePayment) {
-        const pointsEarned = Math.floor(parseFloat(totalAmount) / 10);
-        if (pointsEarned > 0) {
-          await tx.user.update({
-            where: { id: userId },
-            data: {
-              rewardPoints: { increment: pointsEarned }
-            }
-          });
-        }
+      // 4. Award Reward Points for All Paid Transactions (Minimum 1 Point for any paid order, 1 Point per ₹10 spent)
+      const isPaidOrder = paymentMethod !== 'Reward Points' && parseFloat(totalAmount) > 0;
+      if (isPaidOrder) {
+        const orderVal = parseFloat(totalAmount);
+        const pointsEarned = Math.max(1, Math.floor(orderVal / 10));
+        await tx.user.update({
+          where: { id: userId },
+          data: {
+            rewardPoints: { increment: pointsEarned }
+          }
+        });
       }
 
       // 5. Verify and Update Wallet if needed

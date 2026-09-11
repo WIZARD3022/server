@@ -294,3 +294,81 @@ exports.getAnnouncements = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+exports.searchUsers = async (req, res) => {
+  try {
+    const { query } = req.query;
+    if (!query || !query.trim()) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const searchTerm = query.trim();
+    const users = await db.user.findMany({
+      where: {
+        OR: [
+          { email: { contains: searchTerm, mode: 'insensitive' } },
+          { phoneNumber: { contains: searchTerm } },
+          { rollNumber: { contains: searchTerm, mode: 'insensitive' } },
+          { fullName: { contains: searchTerm, mode: 'insensitive' } }
+        ]
+      },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        phoneNumber: true,
+        rollNumber: true,
+        department: true
+      },
+      take: 30
+    });
+
+    res.json({ success: true, data: users });
+  } catch (error) {
+    console.error('Search users error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.sendTargetedNotification = async (req, res) => {
+  try {
+    const { userIds, title, message, icon } = req.body;
+
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'Please select at least one target user.' });
+    }
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({ success: false, message: 'Notification title is required.' });
+    }
+
+    if (!message || !message.trim()) {
+      return res.status(400).json({ success: false, message: 'Notification message is required.' });
+    }
+
+    const cleanTitle = title.trim();
+    const cleanMessage = message.trim();
+    const notificationIcon = icon || 'offer';
+    const now = new Date();
+
+    const notificationRecords = userIds.map(uid => ({
+      userId: uid,
+      title: cleanTitle,
+      message: cleanMessage,
+      icon: notificationIcon,
+      isRead: false,
+      timestamp: now
+    }));
+
+    await db.notification.createMany({ data: notificationRecords });
+
+    res.status(201).json({
+      success: true,
+      message: `Notification sent successfully to ${userIds.length} user(s)!`,
+      count: userIds.length
+    });
+  } catch (error) {
+    console.error('Send targeted notification error:', error);
+    res.status(500).json({ success: false, message: 'Failed to send notification: ' + error.message });
+  }
+};
