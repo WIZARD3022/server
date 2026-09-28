@@ -11,3 +11,9 @@ docs
 node_modules
 
 postman
+
+uploads/*
+!uploads/banners/
+!uploads/banners/**
+!uploads/products/
+!uploads/products/**

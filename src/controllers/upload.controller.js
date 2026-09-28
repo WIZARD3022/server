@@ -11,8 +11,7 @@ exports.uploadFile = (req, res) => {
   // Use BASE_URL from .env if available, otherwise fallback to request headers
   const rawBaseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
   const baseUrl = rawBaseUrl.replace(/^http:\/\//, 'https://');
-  const newfilename = encodeURIComponent(req.file.filename);
-  const fileUrl = `${baseUrl}/uploads/${type}/${newfilename}`;
+  const fileUrl = `${baseUrl}/uploads/${type}/${encodeURIComponent(req.file.filename)}`;
 
   return res.status(201).json({
     success: true,
@@ -21,8 +20,7 @@ exports.uploadFile = (req, res) => {
       type,
       url: fileUrl,
       filename: req.file.filename,
-      uploadFilename: req.file.originalname,
-      originalName: newfilename,
+      originalName: req.file.originalname,
       mimeType: req.file.mimetype,
       size: req.file.size
     }

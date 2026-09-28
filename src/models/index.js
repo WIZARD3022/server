@@ -22,29 +22,12 @@ const definition = {
     _id: id, userId: { type: String, required: true, index: true },
     orderId: { type: String, index: true },
     cupsJobId: { type: String, index: true },
-    uploadfilename: String,
     originalName: String,
     file: String,
     size: Number,
     options: { type: mongoose.Schema.Types.Mixed, default: {} },
     status: { type: String, enum: ['pending', 'submitted', 'processing', 'completed', 'cancelled', 'failed', 'unknown'], default: 'pending', index: true },
-    error: String,
-    localFile: String,
-
-folder: {
-    type: String,
-    enum: ["normal", "express", "cash"]
-},
-
-priority: {
-    type: Number,
-    default: 0
-},
-
-queuePosition: {
-    type: Number,
-    default: 0
-}
+    error: String
   },
   SupportTicket: {
     _id: id,
@@ -100,6 +83,39 @@ queuePosition: {
     order: { type: Number, default: 0 },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now }
+  },
+  Service: {
+    _id: id,
+    title: { type: String, required: true },
+    category: { type: String, enum: ['DEVELOPMENT', 'TOOL_RENTAL', 'ACADEMIC_HELP'], default: 'DEVELOPMENT' },
+    shortDescription: String,
+    description: String,
+    price: { type: Number, required: true, min: 0 },
+    priceUnit: { type: String, default: 'project' },
+    images: [String],
+    isAvailable: { type: Boolean, default: true },
+    isFeatured: { type: Boolean, default: false },
+    rating: { type: Number, default: 5.0 },
+    totalReviews: { type: Number, default: 0 },
+    specifications: mongoose.Schema.Types.Mixed,
+    tags: [String],
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now }
+  },
+  ServiceBooking: {
+    _id: id,
+    serviceId: { type: String, required: true, index: true },
+    serviceTitle: String,
+    userId: { type: String, required: true, index: true },
+    category: String,
+    requirements: String,
+    rentalDays: { type: Number, default: 1 },
+    totalAmount: { type: Number, required: true },
+    status: { type: String, enum: ['PENDING', 'APPROVED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'], default: 'PENDING' },
+    contactPhone: String,
+    preferredDate: { type: Date, default: Date.now },
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now }
   }
 };
 const indexes = {
@@ -115,7 +131,9 @@ const indexes = {
   PrintJob: [[{ userId: 1, createdAt: -1 }]],
   Coupon: [[{ code: 1 }], [{ isActive: 1 }], [{ expiresAt: 1 }]],
   CouponRedemption: [[{ couponId: 1 }], [{ userId: 1 }], [{ userId: 1, couponId: 1 }]],
-  PickupPoint: [[{ isActive: 1 }], [{ order: 1 }]]
+  PickupPoint: [[{ isActive: 1 }], [{ order: 1 }]],
+  Service: [[{ category: 1 }], [{ isAvailable: 1 }], [{ isFeatured: 1 }]],
+  ServiceBooking: [[{ userId: 1, createdAt: -1 }], [{ status: 1 }]]
 };
 
 Object.keys(definition).forEach(name => {
