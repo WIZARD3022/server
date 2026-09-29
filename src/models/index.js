@@ -22,12 +22,29 @@ const definition = {
     _id: id, userId: { type: String, required: true, index: true },
     orderId: { type: String, index: true },
     cupsJobId: { type: String, index: true },
+    uploadfilename: String,
     originalName: String,
     file: String,
     size: Number,
     options: { type: mongoose.Schema.Types.Mixed, default: {} },
     status: { type: String, enum: ['pending', 'submitted', 'processing', 'completed', 'cancelled', 'failed', 'unknown'], default: 'pending', index: true },
-    error: String
+    error: String,
+    localFile: String,
+
+folder: {
+    type: String,
+    enum: ["normal", "express", "cash"]
+},
+
+priority: {
+    type: Number,
+    default: 0
+},
+
+queuePosition: {
+    type: Number,
+    default: 0
+}
   },
   SupportTicket: {
     _id: id,

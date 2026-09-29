@@ -596,11 +596,14 @@ exports.createOrder = async (req, res) => {
       for (const item of items) {
         if (item.type === 'Printing' || item.type === 'print') {
           const config = item.config || {};
+          const fileplace = config.documentUrl.split('uploads/')[1].split('/')[1] || '';
+          console.log("file url:", fileplace);
           await tx.printJob.create({
             data: {
               userId,
               orderId: order.id,
-              originalName: item.productName || item.title || 'Document',
+              uploadFilename: item.productName || item.title || 'Document',
+              originalName: fileplace,
               file: config.documentUrl || '',
               status: 'pending',
               options: {
