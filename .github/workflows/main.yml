@@ -25,19 +25,20 @@ jobs:
           ssh-keyscan -p "${{ secrets.VPS_PORT }}" \
             "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
 
-      # 2. Deploy server code
+      # 2. Deploy changed/new files
       - name: Deploy to VPS
         run: |
-          rsync -avz --delete \
+          rsync -avz \
             --exclude ".env" \
-            --exclude "node_modules/" \
             --exclude "uploads/" \
+            --exclude "node_modules/" \
             --exclude ".git/" \
+            --exclude "*.log" \
             -e "ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.VPS_PORT }}" \
             ./ \
             ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/Desktop/vinit/server/
 
-      # 3. Restart Node server
+      # 3. Install dependencies and restart server
       - name: Restart PM2
         run: |
           ssh \
