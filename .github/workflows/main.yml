@@ -15,17 +15,52 @@ jobs:
 
       # 1. Setup SSH
       - name: Setup SSH
+        shell: bash
         run: |
-          mkdir -p ~/.ssh
+          set -e
 
-          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
 
-          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' '${{ secrets.VPS_SSH_KEY }}' > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
 
-          ssh-keyscan -p "${{ secrets.VPS_PORT }}" \
-            "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+          echo "Testing SSH port..."
+          timeout 10 bash -c \
+            "cat < /dev/null > /dev/tcp/${{ secrets.VPS_HOST }}/${{ secrets.VPS_PORT }}" \
+            || {
+              echo "ERROR: VPS SSH port is not reachable."
+              exit 1
+            }
 
-      # 2. Deploy files
+          echo "Getting VPS host key..."
+          ssh-keyscan \
+            -T 10 \
+            -p "${{ secrets.VPS_PORT }}" \
+            "${{ secrets.VPS_HOST }}" \
+            > "$HOME/.ssh/known_hosts"
+
+          if [ ! -s "$HOME/.ssh/known_hosts" ]; then
+            echo "ERROR: ssh-keyscan returned no host key."
+            exit 1
+          fi
+
+          chmod 644 "$HOME/.ssh/known_hosts"
+
+          echo "SSH configuration completed."
+
+      # 2. Test SSH connection
+      - name: Test SSH
+        run: |
+          ssh \
+            -i "$HOME/.ssh/id_ed25519" \
+            -p "${{ secrets.VPS_PORT }}" \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=10 \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+            "whoami && echo \$HOME"
+
+      # 3. Deploy server files
       - name: Deploy to VPS
         run: |
           rsync -avz \
@@ -34,15 +69,21 @@ jobs:
             --exclude "node_modules/" \
             --exclude ".git/" \
             --exclude "*.log" \
-            -e "ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.VPS_PORT }}" \
+            -e "ssh -i $HOME/.ssh/id_ed25519 -p ${{ secrets.VPS_PORT }}" \
             ./ \
             "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/root/Desktop/vinit/server/"
 
-      # 3. Install dependencies and restart PM2
+      # 4. Install dependencies and restart PM2
       - name: Restart Server
         run: |
           ssh \
-            -i ~/.ssh/id_ed25519 \
+            -i "$HOME/.ssh/id_ed25519" \
             -p "${{ secrets.VPS_PORT }}" \
+            -o StrictHostKeyChecking=yes \
             "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
-            "cd /root/Desktop/vinit/server && pwd && ls -la package.json && npm install --omit=dev && pm2 restart my-app"
+            "cd /root/Desktop/vinit/server && \
+             echo 'Current directory:' && pwd && \
+             echo 'Checking package.json:' && \
+             ls -lh package.json && \
+             npm install --omit=dev && \
+             pm2 restart my-app"
