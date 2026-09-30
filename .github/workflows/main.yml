@@ -13,7 +13,11 @@ jobs:
 
     steps:
 
-      # 1. Setup SSH
+      # 1. Download the GitHub repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Setup SSH
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -25,7 +29,21 @@ jobs:
           ssh-keyscan -p "${{ secrets.VPS_PORT }}" \
             "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
 
-      # 2. Deploy changed/new files
+      # 3. Verify files from GitHub
+      - name: Verify deployment files
+        run: |
+          echo "Commit being deployed:"
+          git log -1 --oneline
+
+          echo ""
+          echo "server.js:"
+          ls -la src/server.js
+
+          echo ""
+          echo "Checking server.js:"
+          grep -n "Update PM2 process name in workflow" src/server.js || true
+
+      # 4. Deploy files to VPS
       - name: Deploy to VPS
         run: |
           rsync -avz \
@@ -38,11 +56,20 @@ jobs:
             ./ \
             ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/root/Desktop/vinit/server/
 
-      # 3. Install dependencies and restart PM2
-      - name: Restart Node Server
+      # 5. Verify deployment on VPS
+      - name: Verify VPS deployment
         run: |
           ssh \
             -i ~/.ssh/id_ed25519 \
             -p "${{ secrets.VPS_PORT }}" \
             "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
-            "cd /root/Desktop/vinit/server && npm install --omit=dev && pm2 restart unikart-api"
+            "ls -la /root/Desktop/vinit/server/src/server.js && grep -n 'Update PM2 process name in workflow' /root/Desktop/vinit/server/src/server.js || true"
+
+      # 6. Install dependencies and restart UniKart API
+      - name: Restart UniKart API
+        run: |
+          ssh \
+            -i ~/.ssh/id_ed25519 \
+            -p "${{ secrets.VPS_PORT }}" \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+            "cd /root/Desktop/vinit/server && npm install --omit=dev && pm2 restart unikart-api --update-env"
