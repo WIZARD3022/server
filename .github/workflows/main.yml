@@ -25,7 +25,7 @@ jobs:
           ssh-keyscan -p "${{ secrets.VPS_PORT }}" \
             "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
 
-      # 2. Deploy changed/new files
+      # 2. Deploy files
       - name: Deploy to VPS
         run: |
           rsync -avz \
@@ -36,13 +36,13 @@ jobs:
             --exclude "*.log" \
             -e "ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.VPS_PORT }}" \
             ./ \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/Desktop/vinit/server/
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/root/Desktop/vinit/server/"
 
-      # 3. Install dependencies and restart server
-      - name: Restart PM2
+      # 3. Install dependencies and restart PM2
+      - name: Restart Server
         run: |
           ssh \
             -i ~/.ssh/id_ed25519 \
             -p "${{ secrets.VPS_PORT }}" \
             "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
-            "cd ~/Desktop/vinit/server && npm install --production && pm2 restart my-app"
+            "cd /root/Desktop/vinit/server && pwd && ls -la package.json && npm install --omit=dev && pm2 restart my-app"
