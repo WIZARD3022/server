@@ -4,6 +4,8 @@ const app = require('./app');
 const database = require('./config/database');
 const { verifyMailTransport } = require('./config/mail');
 
+//checking just
+
 const PORT = process.env.PORT || 3000;
 
 let server;
