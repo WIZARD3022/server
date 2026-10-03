@@ -73,10 +73,14 @@ exports.getProducts = async (req, res) => {
     if (bestSeller === 'true') where.isBestSeller = true;
     if (dealOfDay === 'true') where.isDealOfTheDay = true;
 
-    if (search) {
+    if (search && search.trim()) {
+      const term = search.trim();
       where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } }
+        { name: { contains: term, mode: 'insensitive' } },
+        { description: { contains: term, mode: 'insensitive' } },
+        { shortDescription: { contains: term, mode: 'insensitive' } },
+        { category: { contains: term, mode: 'insensitive' } },
+        { brand: { contains: term, mode: 'insensitive' } }
       ];
     }
 
@@ -461,20 +465,48 @@ exports.createOrder = async (req, res) => {
           }
         }
 
-        // Calculate subtotal from items
+        // Calculate subtotal & print type restrictions
         let shoppingSubtotal = 0;
         let printingSubtotal = 0;
+        let eligiblePrintingSubtotal = 0;
+        let matchingPrintItemsCount = 0;
+
+        const printTypeRestr = coupon.printTypeRestriction || 'ANY';
+
         for (const item of items) {
           const qty = Number(item.quantity || 1);
           const price = Number(item.price || 0);
-          if (item.type === 'Printing') printingSubtotal += price * qty;
-          else shoppingSubtotal += price * qty;
+
+          if (item.type === 'Printing' || item.type === 'print') {
+            const itemCost = price * qty;
+            printingSubtotal += itemCost;
+
+            const config = item.config || {};
+            const isColor = config.color === 'color' || config.printingType === 'Color';
+
+            let isPrintTypeMatch = true;
+            if (printTypeRestr === 'BW_ONLY' && isColor) isPrintTypeMatch = false;
+            if (printTypeRestr === 'COLOR_ONLY' && !isColor) isPrintTypeMatch = false;
+
+            if (isPrintTypeMatch) {
+              eligiblePrintingSubtotal += itemCost;
+              matchingPrintItemsCount++;
+            }
+          } else {
+            shoppingSubtotal += price * qty;
+          }
         }
+
         const totalCartSubtotal = shoppingSubtotal + printingSubtotal;
+
+        if (printTypeRestr !== 'ANY' && matchingPrintItemsCount === 0) {
+          throw new Error(`Coupon "${normCode}" is only applicable to ${printTypeRestr === 'BW_ONLY' ? 'Black & White' : 'Color'} print jobs.`);
+        }
 
         let eligibleSubtotal = totalCartSubtotal;
         if (coupon.applicableType === 'SHOPPING_ONLY') eligibleSubtotal = shoppingSubtotal;
-        else if (coupon.applicableType === 'PRINTING_ONLY') eligibleSubtotal = printingSubtotal;
+        else if (coupon.applicableType === 'PRINTING_ONLY') eligibleSubtotal = eligiblePrintingSubtotal;
+        else if (printTypeRestr !== 'ANY') eligibleSubtotal = shoppingSubtotal + eligiblePrintingSubtotal;
 
         if (coupon.minimumOrderAmount > 0 && totalCartSubtotal < coupon.minimumOrderAmount) {
           throw new Error(`Minimum order amount for coupon "${normCode}" is ₹${coupon.minimumOrderAmount.toFixed(2)}.`);
@@ -482,8 +514,38 @@ exports.createOrder = async (req, res) => {
 
         if (coupon.discountType === 'FIXED') {
           calculatedCouponDiscount = Number(coupon.discountValue || 0);
-        } else {
+        } else if (coupon.discountType === 'PERCENTAGE') {
           calculatedCouponDiscount = (eligibleSubtotal * Number(coupon.discountValue || 0)) / 100;
+        } else if (coupon.discountType === 'PER_PAGE_RATE') {
+          const specialRate = Math.max(0, Number(coupon.discountValue || 0));
+          let customRateDiscount = 0;
+
+          for (const item of items) {
+            if (item.type === 'Printing' || item.type === 'print') {
+              const config = item.config || {};
+              const isColor = config.color === 'color' || config.printingType === 'Color';
+
+              let isPrintTypeMatch = true;
+              if (printTypeRestr === 'BW_ONLY' && isColor) isPrintTypeMatch = false;
+              if (printTypeRestr === 'COLOR_ONLY' && !isColor) isPrintTypeMatch = false;
+
+              if (isPrintTypeMatch) {
+                const itemQty = Number(item.quantity || 1);
+                const itemPrice = Number(item.price || 0);
+                const totalItemCost = itemPrice * itemQty;
+
+                const pagesPerCopy = Number(config.pages || 1);
+                const totalPages = pagesPerCopy * itemQty;
+                const specialCost = totalPages * specialRate;
+
+                if (totalItemCost > specialCost) {
+                  customRateDiscount += (totalItemCost - specialCost);
+                }
+              }
+            }
+          }
+
+          calculatedCouponDiscount = customRateDiscount;
         }
 
         if (coupon.maximumDiscountAmount > 0) {

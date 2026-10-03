@@ -67,9 +67,13 @@ const calculateCouponDiscount = async (rawCode, userId) => {
     throw { statusCode: 400, message: 'Your cart is empty or no items are selected.', code: 'CART_EMPTY' };
   }
 
-  // 7. Calculate actual subtotal from DB product prices
+  // 7. Calculate actual subtotal & evaluate Print Sub-type restrictions
   let shoppingSubtotal = 0;
   let printingSubtotal = 0;
+  let eligiblePrintingSubtotal = 0;
+  let matchingPrintItemsCount = 0;
+
+  const printTypeRestr = coupon.printTypeRestriction || 'ANY';
 
   for (const item of cartItems) {
     let itemPrice = Number(item.price || 0);
@@ -81,8 +85,21 @@ const calculateCouponDiscount = async (rawCode, userId) => {
         itemPrice = Number(dbProduct.price || 0);
       }
       shoppingSubtotal += itemPrice * itemQty;
-    } else if (item.type === 'Printing') {
-      printingSubtotal += itemPrice * itemQty;
+    } else if (item.type === 'Printing' || item.type === 'print') {
+      const itemCost = itemPrice * itemQty;
+      printingSubtotal += itemCost;
+
+      const config = item.config || {};
+      const isColor = config.color === 'color' || config.printingType === 'Color';
+
+      let isPrintTypeMatch = true;
+      if (printTypeRestr === 'BW_ONLY' && isColor) isPrintTypeMatch = false;
+      if (printTypeRestr === 'COLOR_ONLY' && !isColor) isPrintTypeMatch = false;
+
+      if (isPrintTypeMatch) {
+        eligiblePrintingSubtotal += itemCost;
+        matchingPrintItemsCount++;
+      }
     } else {
       shoppingSubtotal += itemPrice * itemQty;
     }
@@ -90,16 +107,26 @@ const calculateCouponDiscount = async (rawCode, userId) => {
 
   const totalCartSubtotal = shoppingSubtotal + printingSubtotal;
 
+  if (printTypeRestr !== 'ANY' && matchingPrintItemsCount === 0) {
+    throw {
+      statusCode: 400,
+      message: `This coupon is only applicable to ${printTypeRestr === 'BW_ONLY' ? 'Black & White' : 'Color'} print jobs.`,
+      code: 'PRINT_TYPE_MISMATCH'
+    };
+  }
+
   // 8. Determine eligible amount based on applicableType
   let eligibleSubtotal = totalCartSubtotal;
   if (coupon.applicableType === 'SHOPPING_ONLY') {
     eligibleSubtotal = shoppingSubtotal;
   } else if (coupon.applicableType === 'PRINTING_ONLY') {
-    eligibleSubtotal = printingSubtotal;
+    eligibleSubtotal = eligiblePrintingSubtotal;
+  } else if (printTypeRestr !== 'ANY') {
+    eligibleSubtotal = shoppingSubtotal + eligiblePrintingSubtotal;
   }
 
   if (eligibleSubtotal <= 0) {
-    throw { statusCode: 400, message: `This coupon is only applicable to ${coupon.applicableType === 'SHOPPING_ONLY' ? 'Shopping' : 'Printing'} items.`, code: 'NOT_APPLICABLE' };
+    throw { statusCode: 400, message: `This coupon is not applicable to the selected items in your cart.`, code: 'NOT_APPLICABLE' };
   }
 
   // 9. Check minimum order requirement
@@ -113,6 +140,36 @@ const calculateCouponDiscount = async (rawCode, userId) => {
     discount = Number(coupon.discountValue || 0);
   } else if (coupon.discountType === 'PERCENTAGE') {
     discount = (eligibleSubtotal * Number(coupon.discountValue || 0)) / 100;
+  } else if (coupon.discountType === 'PER_PAGE_RATE') {
+    const specialRate = Math.max(0, Number(coupon.discountValue || 0));
+    let customRateDiscount = 0;
+
+    for (const item of cartItems) {
+      if (item.type === 'Printing' || item.type === 'print') {
+        const config = item.config || {};
+        const isColor = config.color === 'color' || config.printingType === 'Color';
+
+        let isPrintTypeMatch = true;
+        if (printTypeRestr === 'BW_ONLY' && isColor) isPrintTypeMatch = false;
+        if (printTypeRestr === 'COLOR_ONLY' && !isColor) isPrintTypeMatch = false;
+
+        if (isPrintTypeMatch) {
+          const itemQty = Number(item.quantity || 1);
+          const itemPrice = Number(item.price || 0);
+          const totalItemCost = itemPrice * itemQty;
+
+          const pagesPerCopy = Number(config.pages || 1);
+          const totalPages = pagesPerCopy * itemQty;
+          const specialCost = totalPages * specialRate;
+
+          if (totalItemCost > specialCost) {
+            customRateDiscount += (totalItemCost - specialCost);
+          }
+        }
+      }
+    }
+
+    discount = customRateDiscount;
   }
 
   // 11. Cap discount at maximumDiscountAmount if set
@@ -247,7 +304,8 @@ exports.createCoupon = async (req, res) => {
       startsAt,
       expiresAt,
       isActive,
-      applicableType
+      applicableType,
+      printTypeRestriction
     } = req.body;
 
     const normCode = normalizeCode(code);
@@ -269,7 +327,7 @@ exports.createCoupon = async (req, res) => {
     const coupon = await db.coupon.create({
       data: {
         code: normCode,
-        discountType: discountType === 'PERCENTAGE' ? 'PERCENTAGE' : 'FIXED',
+        discountType: ['PERCENTAGE', 'PER_PAGE_RATE'].includes(discountType) ? discountType : 'FIXED',
         discountValue: Math.max(0, Number(discountValue || 0)),
         minimumOrderAmount: Math.max(0, Number(minimumOrderAmount || 0)),
         maximumDiscountAmount: Math.max(0, Number(maximumDiscountAmount || 0)),
@@ -279,7 +337,8 @@ exports.createCoupon = async (req, res) => {
         startsAt: startsAt ? new Date(startsAt) : new Date(),
         expiresAt: expiresAt ? new Date(expiresAt) : null,
         isActive: isActive !== false,
-        applicableType: ['SHOPPING_ONLY', 'PRINTING_ONLY'].includes(applicableType) ? applicableType : 'ALL'
+        applicableType: ['SHOPPING_ONLY', 'PRINTING_ONLY'].includes(applicableType) ? applicableType : 'ALL',
+        printTypeRestriction: ['BW_ONLY', 'COLOR_ONLY'].includes(printTypeRestriction) ? printTypeRestriction : 'ANY'
       }
     });
 
@@ -347,7 +406,8 @@ exports.updateCoupon = async (req, res) => {
       startsAt,
       expiresAt,
       isActive,
-      applicableType
+      applicableType,
+      printTypeRestriction
     } = req.body;
 
     const existing = await db.coupon.findUnique({ where: { id: couponId } });
@@ -356,7 +416,7 @@ exports.updateCoupon = async (req, res) => {
     const updated = await db.coupon.update({
       where: { id: couponId },
       data: {
-        discountType: discountType === 'PERCENTAGE' ? 'PERCENTAGE' : 'FIXED',
+        discountType: ['PERCENTAGE', 'PER_PAGE_RATE'].includes(discountType) ? discountType : 'FIXED',
         discountValue: Math.max(0, Number(discountValue || 0)),
         minimumOrderAmount: Math.max(0, Number(minimumOrderAmount || 0)),
         maximumDiscountAmount: Math.max(0, Number(maximumDiscountAmount || 0)),
@@ -365,7 +425,8 @@ exports.updateCoupon = async (req, res) => {
         startsAt: startsAt ? new Date(startsAt) : existing.startsAt,
         expiresAt: expiresAt ? new Date(expiresAt) : existing.expiresAt,
         isActive: isActive !== undefined ? Boolean(isActive) : existing.isActive,
-        applicableType: ['SHOPPING_ONLY', 'PRINTING_ONLY'].includes(applicableType) ? applicableType : existing.applicableType
+        applicableType: ['SHOPPING_ONLY', 'PRINTING_ONLY'].includes(applicableType) ? applicableType : existing.applicableType,
+        printTypeRestriction: ['BW_ONLY', 'COLOR_ONLY'].includes(printTypeRestriction) ? printTypeRestriction : existing.printTypeRestriction
       }
     });
 
