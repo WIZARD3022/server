@@ -26,6 +26,9 @@ router.get('/announcements', adminController.getAnnouncements);
 router.get('/users/search', adminController.searchUsers);
 router.post('/notifications/send-targeted', adminController.sendTargetedNotification);
 
+// Category Insights & Management
+router.get('/categories/insights', shoppingController.getCategoryInsights);
+
 // Pickup Points Management
 router.get('/pickup-points', shoppingController.getAllPickupPoints);
 router.post('/pickup-points', shoppingController.createPickupPoint);

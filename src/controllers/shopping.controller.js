@@ -61,6 +61,48 @@ exports.deleteCategory = async (req, res) => {
   }
 };
 
+exports.getCategoryInsights = async (req, res) => {
+  try {
+    const categories = await db.category.findMany({
+      orderBy: { order: 'asc' }
+    });
+
+    const products = await db.product.findMany({});
+    const orders = await db.order.findMany({});
+
+    const insights = categories.map(cat => {
+      const catProducts = products.filter(p => p.category === cat.name);
+      let totalOrders = 0;
+      let totalRevenue = 0;
+
+      orders.forEach(ord => {
+        const items = ord.config?.items || [];
+        items.forEach(item => {
+          if (item.category === cat.name) {
+            totalOrders += (item.quantity || 1);
+            totalRevenue += (item.price || 0) * (item.quantity || 1);
+          }
+        });
+      });
+
+      return {
+        id: cat.id,
+        name: cat.name,
+        icon: cat.icon,
+        order: cat.order || 0,
+        isActive: cat.isActive !== false,
+        productCount: catProducts.length,
+        totalOrders,
+        totalRevenue
+      };
+    });
+
+    res.json({ success: true, data: insights });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // --- Products ---
 exports.getProducts = async (req, res) => {
   try {
