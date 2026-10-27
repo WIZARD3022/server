@@ -23,13 +23,15 @@
         "jsonwebtoken": "^9.0.2",
         "jsqr": "^1.4.0",
         "jwks-rsa": "^4.1.0",
+        "libreoffice-convert": "^1.8.2",
         "mongodb": "^7.6.0",
         "mongoose": "^9.9.4",
         "morgan": "^1.10.0",
         "multer": "^1.4.5-lts.1",
         "nodemailer": "^9.0.6",
         "qrcode": "^1.5.4",
-        "razorpay": "^2.9.8"
+        "razorpay": "^2.9.8",
+        "util": "^0.12.5"
     },
     "devDependencies": {
         "nodemon": "^3.1.0"

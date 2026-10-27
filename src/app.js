@@ -61,6 +61,7 @@ app.use('/api/v1/coupons', require('./routes/coupon.routes'));
 app.use('/api/v1/services', require('./routes/service.routes'));
 app.use('/api/v1/notification', require('./routes/notification.routes'));
 app.use('/api/v1/notifications', require('./routes/notification.routes'));
+app.use('/api/v1/convert', require('./routes/convert.routes'));
 
 
 // Error Handling Middleware
